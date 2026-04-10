@@ -2,12 +2,15 @@ from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from .database import init_db
 from .docker_manager import sync_port_registry_from_docker
+from .routers.chat_ws import router as chat_ws_router
 from .routers.sessions import router as sessions_router
 
 _DEFAULT_CORS_ORIGINS = (
@@ -15,6 +18,8 @@ _DEFAULT_CORS_ORIGINS = (
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
 )
 
 
@@ -43,3 +48,12 @@ app.add_middleware(
 )
 
 app.include_router(sessions_router, prefix="/api")
+app.include_router(chat_ws_router, prefix="/api")
+
+_frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
+if _frontend_dir.is_dir():
+    app.mount(
+        "/",
+        StaticFiles(directory=str(_frontend_dir), html=True),
+        name="frontend",
+    )

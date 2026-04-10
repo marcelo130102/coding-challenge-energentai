@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
+from ..anthropic_session_config import resolve_anthropic_base_url
 from ..database import get_db
 from ..docker_manager import (
     DockerOrchestrationError,
@@ -22,24 +23,41 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 DbDep = Annotated[OrmSession, Depends(get_db)]
 
 
+def _session_read(row: Session) -> SessionRead:
+    return SessionRead(
+        id=row.id,
+        status=row.status,
+        created_at=row.created_at,
+        vnc_port=row.vnc_port,
+        agent_api_port=row.agent_api_port,
+        docker_container_id=row.docker_container_id,
+        credentials_stored=bool(row.api_key),
+        api_endpoint=row.api_endpoint,
+    )
+
+
 @router.post("", response_model=SessionRead, status_code=status.HTTP_201_CREATED)
 def create_session(
     body: SessionCreate,
     db: DbDep,
 ) -> SessionRead:
     orchestrate = is_orchestration_enabled()
+    base_url, endpoint_label = resolve_anthropic_base_url(body)
     row = Session(
         status="provisioning" if orchestrate else body.status,
         vnc_port=None if orchestrate else body.vnc_port,
         agent_api_port=None if orchestrate else body.agent_api_port,
         docker_container_id=None,
+        api_key=body.api_key.get_secret_value(),
+        anthropic_base_url=base_url,
+        api_endpoint=endpoint_label,
     )
     db.add(row)
     db.commit()
     db.refresh(row)
 
     if not orchestrate:
-        return SessionRead.model_validate(row)
+        return _session_read(row)
 
     try:
         rt = start_session_environment(row.id)
@@ -57,7 +75,7 @@ def create_session(
     row.status = body.status
     db.commit()
     db.refresh(row)
-    return SessionRead.model_validate(row)
+    return _session_read(row)
 
 
 @router.get("/{session_id}/history", response_model=list[MessageRead])
@@ -107,7 +125,7 @@ def get_session(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
         )
-    return SessionRead.model_validate(row)
+    return _session_read(row)
 
 
 @router.delete("/{session_id}", response_model=SessionRead)
@@ -134,6 +152,9 @@ def delete_session(
     row.docker_container_id = None
     row.vnc_port = None
     row.agent_api_port = None
+    row.api_key = None
+    row.anthropic_base_url = None
+    row.api_endpoint = None
     db.commit()
     db.refresh(row)
-    return SessionRead.model_validate(row)
+    return _session_read(row)

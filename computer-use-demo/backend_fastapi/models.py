@@ -23,6 +23,12 @@ class Session(Base):
     vnc_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     agent_api_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
     docker_container_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    api_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    anthropic_base_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    api_endpoint: Mapped[str | None] = mapped_column(
+        String(16),
+        nullable=True,
+    )
 
     messages: Mapped[list[Message]] = relationship(
         "Message",

@@ -39,6 +39,12 @@ def _migrate_sessions_columns() -> None:
         stmts.append("ALTER TABLE sessions ADD COLUMN agent_api_port INTEGER")
     if "docker_container_id" not in existing:
         stmts.append("ALTER TABLE sessions ADD COLUMN docker_container_id VARCHAR(128)")
+    if "api_key" not in existing:
+        stmts.append("ALTER TABLE sessions ADD COLUMN api_key TEXT")
+    if "anthropic_base_url" not in existing:
+        stmts.append("ALTER TABLE sessions ADD COLUMN anthropic_base_url VARCHAR(512)")
+    if "api_endpoint" not in existing:
+        stmts.append("ALTER TABLE sessions ADD COLUMN api_endpoint VARCHAR(16)")
     if not stmts:
         return
     with engine.begin() as conn:
