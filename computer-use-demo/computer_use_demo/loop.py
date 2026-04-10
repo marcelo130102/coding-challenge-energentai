@@ -2,6 +2,7 @@
 Agentic sampling loop that calls the Claude API and local implementation of anthropic-defined computer use tools.
 """
 
+import os
 import platform
 from collections.abc import Callable
 from datetime import datetime
@@ -37,6 +38,19 @@ from .tools import (
 )
 
 PROMPT_CACHING_BETA_FLAG = "prompt-caching-2024-07-31"
+
+
+def _build_anthropic_client(api_key: str) -> Anthropic:
+    """Prefer env vars injected by Docker orchestration, then the passed api_key."""
+    key = os.getenv("ANTHROPIC_API_KEY") or api_key
+    base = os.getenv("ANTHROPIC_BASE_URL", "").strip()
+    if base:
+        return Anthropic(
+            api_key=key,
+            max_retries=4,
+            base_url=base.rstrip("/"),
+        )
+    return Anthropic(api_key=key, max_retries=4)
 
 
 class APIProvider(StrEnum):
@@ -102,7 +116,7 @@ async def sampling_loop(
             betas.append("token-efficient-tools-2025-02-19")
         image_truncation_threshold = only_n_most_recent_images or 0
         if provider == APIProvider.ANTHROPIC:
-            client = Anthropic(api_key=api_key, max_retries=4)
+            client = _build_anthropic_client(api_key)
             enable_prompt_caching = True
         elif provider == APIProvider.VERTEX:
             client = AnthropicVertex()

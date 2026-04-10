@@ -59,8 +59,20 @@ def create_session(
     if not orchestrate:
         return _session_read(row)
 
+    if not row.api_key or not row.api_key.strip():
+        row.status = "failed"
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="API key is required when Docker orchestration is enabled",
+        )
+
     try:
-        rt = start_session_environment(row.id)
+        rt = start_session_environment(
+            row.id,
+            api_key=row.api_key,
+            anthropic_base_url=row.anthropic_base_url,
+        )
     except DockerOrchestrationError as e:
         row.status = "failed"
         db.commit()

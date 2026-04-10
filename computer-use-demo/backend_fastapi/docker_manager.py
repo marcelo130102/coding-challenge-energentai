@@ -106,18 +106,31 @@ def sync_port_registry_from_docker() -> None:
                 _container_ports[cid] = (n, a)
 
 
-def start_session_environment(session_id: int) -> SessionRuntime:
-    """Run a new computer-use container with unique host port mappings."""
+def start_session_environment(
+    session_id: int,
+    *,
+    api_key: str,
+    anthropic_base_url: str | None,
+) -> SessionRuntime:
+    """Run a new computer-use container with unique host port mappings.
+
+    Injects ``ANTHROPIC_API_KEY`` and optional ``ANTHROPIC_BASE_URL`` for the
+    computer-use agent (see ``computer_use_demo/loop.py``).
+    """
     client = docker.from_env()
     with _lock:
         novnc_h, api_h = _allocate_ports_locked()
     container = None
+    env: dict[str, str] = {"ANTHROPIC_API_KEY": api_key}
+    if anthropic_base_url:
+        env["ANTHROPIC_BASE_URL"] = anthropic_base_url.rstrip("/")
     try:
         container = client.containers.run(
             COMPUTER_USE_DOCKER_IMAGE,
             detach=True,
             name=f"computer-use-session-{session_id}",
             ports={"6080/tcp": novnc_h, "8501/tcp": api_h},
+            environment=env,
             labels={
                 LABEL_MANAGED_KEY: "true",
                 LABEL_SESSION_KEY: str(session_id),
