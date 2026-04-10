@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import init_db
+from .docker_manager import sync_port_registry_from_docker
 from .routers.sessions import router as sessions_router
 
 _DEFAULT_CORS_ORIGINS = (
@@ -27,6 +28,7 @@ def _cors_origins() -> list[str]:
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    sync_port_registry_from_docker()
     yield
 
 

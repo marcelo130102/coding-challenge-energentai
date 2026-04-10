@@ -101,4 +101,7 @@ ENV DISPLAY_NUM=$DISPLAY_NUM
 ENV HEIGHT=$HEIGHT
 ENV WIDTH=$WIDTH
 
+# RFB, noVNC/websockify, demo HTTP, Streamlit. Host port mapping is done by the orchestrator.
+EXPOSE 5900 6080 8080 8501
+
 ENTRYPOINT [ "./entrypoint.sh" ]

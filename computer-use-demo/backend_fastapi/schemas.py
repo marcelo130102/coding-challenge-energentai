@@ -7,7 +7,14 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class SessionCreate(BaseModel):
     status: str = Field(..., max_length=64)
-    vnc_port: int | None = None
+    vnc_port: int | None = Field(
+        default=None,
+        description="Ignored when Docker orchestration is enabled; optional for manual/no-Docker mode.",
+    )
+    agent_api_port: int | None = Field(
+        default=None,
+        description="Host port for Streamlit when orchestration is disabled.",
+    )
 
 
 class SessionRead(BaseModel):
@@ -17,6 +24,8 @@ class SessionRead(BaseModel):
     status: str
     created_at: datetime
     vnc_port: int | None
+    agent_api_port: int | None = None
+    docker_container_id: str | None = None
 
 
 class MessageCreate(BaseModel):
@@ -37,3 +46,11 @@ class MessageRead(BaseModel):
 
 class SessionWithMessages(SessionRead):
     messages: list[MessageRead] = Field(default_factory=list)
+
+
+class SessionVncInfo(BaseModel):
+    """Public URLs for embedding noVNC (HTTP page + WebSocket path used by websockify)."""
+
+    session_id: int
+    websocket_url: str
+    http_url: str

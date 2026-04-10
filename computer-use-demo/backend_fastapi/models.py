@@ -21,6 +21,8 @@ class Session(Base):
         nullable=False,
     )
     vnc_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    agent_api_port: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    docker_container_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
 
     messages: Mapped[list[Message]] = relationship(
         "Message",
