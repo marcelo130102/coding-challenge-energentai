@@ -5,9 +5,11 @@
   const API_BASE = "";
 
   const el = {
+    createForm: document.getElementById("create-session-form"),
     apiKey: document.getElementById("api-key"),
-    apiEndpoint: document.getElementById("api-endpoint"),
-    baseUrlOverride: document.getElementById("base-url-override"),
+    baseUrlPreset: document.getElementById("base-url-preset"),
+    customBaseUrlWrap: document.getElementById("custom-base-url-wrap"),
+    baseUrlCustom: document.getElementById("base-url-custom"),
     btnNew: document.getElementById("btn-new"),
     sessionLabel: document.getElementById("session-label"),
     chatLog: document.getElementById("chat-log"),
@@ -129,6 +131,55 @@
     el.vncFrame.src = info.http_url;
   }
 
+  function syncBaseUrlCustomVisibility() {
+    const isCustom = el.baseUrlPreset.value === "custom";
+    el.customBaseUrlWrap.hidden = !isCustom;
+    if (isCustom) {
+      el.baseUrlCustom.required = true;
+    } else {
+      el.baseUrlCustom.required = false;
+      el.baseUrlCustom.value = "";
+    }
+  }
+
+  /**
+   * @returns {{ payload: Record<string, unknown>, error?: string }}
+   */
+  function buildCreateSessionPayload() {
+    const key = el.apiKey.value.trim();
+    if (!key) {
+      return { payload: {}, error: "Introduce tu API key de Anthropic." };
+    }
+    const preset = el.baseUrlPreset.value;
+    /** @type {Record<string, unknown>} */
+    const payload = {
+      status: "active",
+      api_key: key,
+    };
+    if (preset === "global") {
+      payload.api_endpoint = "global";
+    } else if (preset === "packyapi") {
+      payload.api_endpoint = "packyapi";
+    } else if (preset === "custom") {
+      const bu = el.baseUrlCustom.value.trim();
+      if (!bu) {
+        return {
+          payload: {},
+          error: "Introduce una base URL HTTPS (p. ej. https://www.packyapi.com).",
+        };
+      }
+      if (!bu.startsWith("https://")) {
+        return {
+          payload: {},
+          error: "La base URL debe empezar por https://",
+        };
+      }
+      payload.api_endpoint = "global";
+      payload.base_url = bu;
+    }
+    return { payload };
+  }
+
   async function createSession() {
     el.btnNew.disabled = true;
     closeSocket();
@@ -140,23 +191,15 @@
     el.vncPlaceholder.hidden = false;
     el.vncPlaceholder.textContent = "Loading…";
 
-    const key = el.apiKey.value.trim();
-    if (!key) {
-      appendProgress("Introduce tu API key de Anthropic.");
+    const built = buildCreateSessionPayload();
+    if (built.error) {
+      appendProgress(built.error);
       el.btnNew.disabled = false;
       el.vncPlaceholder.textContent =
         "Create a session with VNC (Docker orchestration) or assign vnc_port to see the desktop here.";
       return;
     }
-    const payload = {
-      status: "active",
-      api_key: key,
-      api_endpoint: el.apiEndpoint.value,
-    };
-    const bu = el.baseUrlOverride.value.trim();
-    if (bu) {
-      payload.base_url = bu;
-    }
+    const payload = built.payload;
 
     try {
       const r = await fetch(`${API_BASE}/api/sessions`, {
@@ -182,7 +225,11 @@
     }
   }
 
-  el.btnNew.addEventListener("click", () => {
+  el.baseUrlPreset.addEventListener("change", syncBaseUrlCustomVisibility);
+  syncBaseUrlCustomVisibility();
+
+  el.createForm.addEventListener("submit", (e) => {
+    e.preventDefault();
     void createSession();
   });
 
