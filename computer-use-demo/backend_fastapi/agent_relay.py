@@ -89,13 +89,11 @@ def diagnose_agent_openapi_port(port: int) -> tuple[bool, str, dict[str, Any]]:
                 "Use the Computer Use demo environment and try again."
             )
             details["body_preview"] = _preview_text(raw, _BODY_PREVIEW_LOG_LEN)
-            _log_probe_diagnosis(port, details, msg)
             return False, msg, details
 
         if resp.status != 200:
             msg = "The remote assistant didn’t respond as expected. Please try again."
             details["body_preview"] = _preview_text(raw, _BODY_PREVIEW_LOG_LEN)
-            _log_probe_diagnosis(port, details, msg)
             return False, msg, details
 
         body = _maybe_decompress_body(raw, resp.getheader("Content-Encoding") or "")
@@ -109,7 +107,6 @@ def diagnose_agent_openapi_port(port: int) -> tuple[bool, str, dict[str, Any]]:
             data = json.loads(text)
         except UnicodeDecodeError:
             msg = "The remote assistant didn’t respond as expected. Please try again."
-            _log_probe_diagnosis(port, details, msg)
             return False, msg, details
         except json.JSONDecodeError as e:
             preview = body[:400].decode("utf-8", errors="replace")
@@ -139,7 +136,6 @@ def diagnose_agent_openapi_port(port: int) -> tuple[bool, str, dict[str, Any]]:
             else:
                 msg = "The remote assistant didn’t respond as expected. Please try again."
                 details["json_parse_error"] = str(e)
-            _log_probe_diagnosis(port, details, msg)
             return False, msg, details
 
         details["parsed_top_level_keys"] = (
@@ -152,28 +148,16 @@ def diagnose_agent_openapi_port(port: int) -> tuple[bool, str, dict[str, Any]]:
             return True, "", details
 
         msg = "The remote assistant didn’t respond as expected. Please try again."
-        _log_probe_diagnosis(port, details, msg)
         return False, msg, details
 
     except OSError as e:
         msg = "Waiting for the remote assistant…"
         details["os_error"] = repr(e)
-        _log_probe_diagnosis(port, details, msg)
         return False, msg, details
     except Exception as e:
         msg = "The remote assistant couldn’t be reached. Please try again."
         details["exception"] = repr(e)
-        _log_probe_diagnosis(port, details, msg)
         return False, msg, details
-
-
-def _log_probe_diagnosis(
-    port: int,
-    details: dict[str, Any],
-    message: str,
-) -> None:
-    payload = {"ok": False, "port": port, "message": message, **details}
-    logger.warning("agent OpenAPI probe FAILED\n%s", json.dumps(payload, indent=2, default=str))
 
 
 async def wait_for_fastapi_agent_http(port: int) -> tuple[bool, str]:
