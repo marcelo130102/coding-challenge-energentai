@@ -1,0 +1,32 @@
+# Computer Use — FastAPI UI + session orchestration.
+#
+# Prerequisite: build the desktop VM image the API spawns per session:
+#   docker build -t computer-use-demo:local .
+#
+# Then:
+#   Set SESSION_API_KEY_FERNET_KEY in .env (see .env.example), then:
+#   docker compose up --build
+#
+# Open http://127.0.0.1:8000
+#
+# Mounting the Docker socket lets the API create session containers on the host.
+# Only use on trusted machines.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      COMPUTER_USE_ORCHESTRATION: "true"
+      COMPUTER_USE_DOCKER_IMAGE: computer-use-demo:local
+      DATABASE_URL: sqlite:////data/computer_use_demo.db
+      SESSION_API_KEY_FERNET_KEY: ${SESSION_API_KEY_FERNET_KEY:-}
+    volumes:
+      - api_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+
+volumes:
+  api_data:
