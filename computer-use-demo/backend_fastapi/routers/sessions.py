@@ -10,13 +10,16 @@ from ..anthropic_session_config import resolve_anthropic_base_url
 from ..database import get_db
 from ..docker_manager import (
     DockerOrchestrationError,
+    destroy_session_environment,
     is_orchestration_enabled,
+    pause_session_environment,
+    resume_session_environment,
     start_session_environment,
-    stop_session_environment,
 )
 from ..models import Message, Session
 from ..novnc_urls import build_session_vnc_info
 from ..schemas import MessageRead, SessionCreate, SessionRead, SessionVncInfo
+from ..session_relay_manager import shutdown_session_relay
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -39,14 +42,12 @@ def _session_read(row: Session) -> SessionRead:
 @router.get("", response_model=list[SessionRead])
 def list_sessions(
     db: DbDep,
-    limit: int = Query(100, ge=1, le=500, description="Max sessions to return (newest first)."),
+    limit: int = Query(
+        100, ge=1, le=500, description="Max sessions to return (newest first)."
+    ),
 ) -> list[SessionRead]:
     """List recent sessions (no secrets). Newest first."""
-    stmt = (
-        select(Session)
-        .order_by(Session.created_at.desc())
-        .limit(limit)
-    )
+    stmt = select(Session).order_by(Session.created_at.desc()).limit(limit)
     rows = db.scalars(stmt).all()
     return [_session_read(r) for r in rows]
 
@@ -156,21 +157,22 @@ def get_session(
 
 
 @router.post("/{session_id}/stop", response_model=SessionRead)
-def stop_session(
+async def stop_session(
     session_id: int,
     db: DbDep,
 ) -> SessionRead:
-    """Stop the remote desktop container and clear credentials; session row stays (status stopped)."""
+    """Pause the remote desktop (Docker stop only). Session and credentials stay; use Resume later."""
     row = db.get(Session, session_id)
     if row is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Session not found",
         )
+    await shutdown_session_relay(session_id)
     cid = row.docker_container_id
     if cid:
         try:
-            stop_session_environment(cid)
+            pause_session_environment(cid)
         except DockerOrchestrationError as e:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -178,19 +180,61 @@ def stop_session(
             ) from e
 
     row.status = "stopped"
-    row.docker_container_id = None
     row.vnc_port = None
     row.agent_api_port = None
-    row.api_key = None
-    row.anthropic_base_url = None
-    row.api_endpoint = None
+    db.commit()
+    db.refresh(row)
+    return _session_read(row)
+
+
+@router.post("/{session_id}/resume", response_model=SessionRead)
+async def resume_session(
+    session_id: int,
+    db: DbDep,
+) -> SessionRead:
+    """Start a paused session container again (same VM, chat history preserved)."""
+    row = db.get(Session, session_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found",
+        )
+    if row.status != "stopped":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Session is not stopped",
+        )
+    if not row.docker_container_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No container to resume; remove this session and create a new one.",
+        )
+    if not row.api_key or not str(row.api_key).strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Stored API key missing; cannot resume this session",
+        )
+
+    await shutdown_session_relay(session_id)
+
+    try:
+        rt = resume_session_environment(row.docker_container_id)
+    except DockerOrchestrationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=str(e),
+        ) from e
+
+    row.vnc_port = rt.novnc_host_port
+    row.agent_api_port = rt.agent_api_host_port
+    row.status = "active"
     db.commit()
     db.refresh(row)
     return _session_read(row)
 
 
 @router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_session(
+async def delete_session(
     session_id: int,
     db: DbDep,
 ) -> Response:
@@ -201,10 +245,11 @@ def delete_session(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Session not found",
         )
+    await shutdown_session_relay(session_id)
     cid = row.docker_container_id
     if cid:
         try:
-            stop_session_environment(cid)
+            destroy_session_environment(cid)
         except DockerOrchestrationError as e:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
