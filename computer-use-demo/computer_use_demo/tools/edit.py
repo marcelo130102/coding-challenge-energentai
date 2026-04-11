@@ -11,6 +11,7 @@ Command = Literal[
     "create",
     "str_replace",
     "insert",
+    "undo_edit",
 ]
 SNIPPET_LINES: int = 4
 
@@ -23,7 +24,11 @@ class EditTool20250728(BaseAnthropicTool):
     This implements the text_editor_20250728 tool version, which:
     - Uses `insert_text` (not `new_str`) for the insert command
     - Uses `str_replace_based_edit_tool` as the tool name
-    - Does not support `undo_edit`
+    - Does not expose Anthropic API ``undo_edit`` (not in the 20250728 schema)
+
+    Session-local ``undo_edit`` is implemented here: it reverts only the last
+    ``str_replace`` or ``insert`` on a path using an in-memory stack (not
+    persisted; not the same as a first-party API undo token).
     """
 
     api_type: Literal["text_editor_20250728"] = "text_editor_20250728"
@@ -62,7 +67,6 @@ class EditTool20250728(BaseAnthropicTool):
             if file_text is None:
                 raise ToolError("Parameter `file_text` is required for command: create")
             self.write_file(_path, file_text)
-            self._file_history[_path].append(file_text)
             return ToolResult(output=f"File created successfully at: {_path}")
         elif command == "str_replace":
             if old_str is None:
@@ -80,6 +84,8 @@ class EditTool20250728(BaseAnthropicTool):
                     "Parameter `insert_text` is required for command: insert"
                 )
             return self.insert(_path, insert_line, insert_text)
+        elif command == "undo_edit":
+            return self.undo_edit(_path)
         raise ToolError(
             f"Unrecognized command {command}. The allowed commands for the {self.name} tool are: {', '.join(get_args(Command))}"
         )
@@ -243,6 +249,24 @@ class EditTool20250728(BaseAnthropicTool):
         )
         success_msg += "Review the changes and make sure they are as expected (correct indentation, no duplicate lines, etc). Edit the file again if necessary."
         return CLIResult(output=success_msg)
+
+    def undo_edit(self, path: Path) -> CLIResult:
+        """Restore the file to the content before the last str_replace or insert (LIFO, in-process)."""
+        stack = self._file_history[path]
+        if not stack:
+            raise ToolError(
+                "Nothing to undo for this file. Local undo only applies after a "
+                "str_replace or insert in this session (text_editor_20250728 has no "
+                "official undo_edit in the API schema; this is a client-side stack)."
+            )
+        previous = stack.pop()
+        self.write_file(path, previous)
+        return CLIResult(
+            output=(
+                f"Undid the last str_replace or insert on {path}. "
+                "Session-local only; history is not persisted across restarts."
+            )
+        )
 
     def read_file(self, path: Path):
         """Read the content of a file from a given path; raise a ToolError if an error occurs."""

@@ -185,7 +185,9 @@ async def test_insert_command(edit_tool):
     ):
         mock_read_text.return_value = "Line 1\nLine 2\nLine 3"
         result = await edit_tool(
-            command="insert", path="/test/file.txt", insert_line=2,
+            command="insert",
+            path="/test/file.txt",
+            insert_line=2,
             insert_text="New Line",
         )
         assert isinstance(result, CLIResult)
@@ -256,10 +258,47 @@ async def test_insert_command(edit_tool):
     ):
         mock_read_text.return_value = "Original content"
         await edit_tool(
-            command="insert", path="/test/file.txt", insert_line=1,
+            command="insert",
+            path="/test/file.txt",
+            insert_line=1,
             insert_text="New Line",
         )
         assert edit_tool._file_history[Path("/test/file.txt")] == ["Original content"]
+
+
+@pytest.mark.asyncio
+async def test_undo_edit_command(edit_tool):
+    """Local undo pops the last str_replace/insert snapshot (not API-level undo)."""
+    edit_tool._file_history.clear()
+    p = Path("/test/file.txt")
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_dir", return_value=False),
+        patch("pathlib.Path.read_text") as mock_read_text,
+        patch("pathlib.Path.write_text") as mock_write_text,
+    ):
+        mock_read_text.return_value = "Original content"
+        await edit_tool(
+            command="str_replace",
+            path="/test/file.txt",
+            old_str="Original",
+            new_str="New",
+        )
+        assert edit_tool._file_history[p] == ["Original content"]
+        mock_write_text.reset_mock()
+        result = await edit_tool(command="undo_edit", path="/test/file.txt")
+        assert isinstance(result, CLIResult)
+        assert "Undid the last" in result.output
+        mock_write_text.assert_called_once_with("Original content")
+        assert edit_tool._file_history[p] == []
+
+    edit_tool._file_history.clear()
+    with (
+        patch("pathlib.Path.exists", return_value=True),
+        patch("pathlib.Path.is_dir", return_value=False),
+    ):
+        with pytest.raises(ToolError, match="Nothing to undo"):
+            await edit_tool(command="undo_edit", path="/test/file.txt")
 
 
 @pytest.mark.asyncio
@@ -292,6 +331,8 @@ async def test_validate_path(edit_tool):
     ):
         with pytest.raises(ToolError, match="is a directory"):
             edit_tool.validate_path("str_replace", Path("/directory/path"))
+        with pytest.raises(ToolError, match="is a directory"):
+            edit_tool.validate_path("undo_edit", Path("/directory/path"))
 
     # Test with directory path for view command (should not raise an error)
     with (
