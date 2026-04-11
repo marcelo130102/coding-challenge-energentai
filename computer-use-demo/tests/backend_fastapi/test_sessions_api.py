@@ -63,11 +63,8 @@ def test_history_404(sessions_client: TestClient) -> None:
 def test_delete_session(sessions_client: TestClient) -> None:
     sid = sessions_client.post("/api/sessions", json=_session_json()).json()["id"]
     r = sessions_client.delete(f"/api/sessions/{sid}")
-    assert r.status_code == 200
-    assert r.json()["status"] == "stopped"
-    assert r.json()["vnc_port"] is None
-    assert r.json()["credentials_stored"] is False
-    assert sessions_client.get(f"/api/sessions/{sid}").status_code == 200
+    assert r.status_code == 204
+    assert sessions_client.get(f"/api/sessions/{sid}").status_code == 404
 
 
 def test_delete_session_404(sessions_client: TestClient) -> None:
@@ -172,9 +169,9 @@ def test_create_with_orchestration_fails(
     mock_start.assert_called_once()
 
 
-@patch("backend_fastapi.routers.sessions.stop_session_environment")
-def test_delete_calls_stop_when_container_id(
-    mock_stop: object,
+@patch("backend_fastapi.routers.sessions.destroy_session_environment")
+def test_delete_calls_destroy_when_container_id(
+    mock_destroy: object,
     sessions_client: TestClient,
     with_docker_orchestration: None,
 ) -> None:
@@ -188,4 +185,36 @@ def test_delete_calls_stop_when_container_id(
         ).json()["id"]
 
     sessions_client.delete(f"/api/sessions/{sid}")
-    mock_stop.assert_called_once_with("c1")
+    mock_destroy.assert_called_once_with("c1")
+
+
+@patch("backend_fastapi.routers.sessions.pause_session_environment")
+@patch("backend_fastapi.routers.sessions.resume_session_environment")
+def test_resume_restarts_container(
+    mock_resume: object,
+    _mock_pause: object,
+    sessions_client: TestClient,
+    with_docker_orchestration: None,
+) -> None:
+    mock_resume.return_value = SessionRuntime("c1", 6082, 8503)
+    with patch(
+        "backend_fastapi.routers.sessions.start_session_environment",
+        return_value=SessionRuntime("c1", 6082, 8503),
+    ):
+        sid = sessions_client.post(
+            "/api/sessions",
+            json=_session_json(status="running"),
+        ).json()["id"]
+
+    st = sessions_client.post(f"/api/sessions/{sid}/stop")
+    assert st.status_code == 200
+    assert st.json()["status"] == "stopped"
+    assert st.json()["docker_container_id"] == "c1"
+
+    r = sessions_client.post(f"/api/sessions/{sid}/resume")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "active"
+    assert body["vnc_port"] == 6082
+    assert body["agent_api_port"] == 8503
+    mock_resume.assert_called_once_with("c1")
