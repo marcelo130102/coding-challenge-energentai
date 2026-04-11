@@ -5,7 +5,9 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+from backend_fastapi.api_key_crypto import decrypt_session_api_key
 from backend_fastapi.docker_manager import DockerOrchestrationError, SessionRuntime
+from backend_fastapi.models import Session
 
 
 def _session_json(**extra: object) -> dict:
@@ -16,6 +18,30 @@ def _session_json(**extra: object) -> dict:
     }
     body.update(extra)
     return body
+
+
+def test_list_sessions_newest_first(sessions_client: TestClient) -> None:
+    first = sessions_client.post(
+        "/api/sessions",
+        json=_session_json(vnc_port=6080),
+    ).json()["id"]
+    second = sessions_client.post(
+        "/api/sessions",
+        json=_session_json(vnc_port=6081),
+    ).json()["id"]
+    r = sessions_client.get("/api/sessions?limit=50")
+    assert r.status_code == 200
+    ids = [row["id"] for row in r.json()]
+    assert second in ids and first in ids
+    assert ids.index(second) < ids.index(first)
+
+
+def test_list_sessions_respects_limit(sessions_client: TestClient) -> None:
+    for i in range(3):
+        sessions_client.post("/api/sessions", json=_session_json(vnc_port=6080 + i))
+    r = sessions_client.get("/api/sessions?limit=2")
+    assert r.status_code == 200
+    assert len(r.json()) == 2
 
 
 def test_create_and_get_session(sessions_client: TestClient) -> None:
@@ -40,6 +66,42 @@ def test_create_and_get_session(sessions_client: TestClient) -> None:
     gj = g.json()
     assert gj["id"] == sid
     assert "api_key" not in gj
+
+
+@pytest.mark.usefixtures("test_fernet_key")
+def test_create_stores_encrypted_api_key_when_fernet_configured(
+    sessions_harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("COMPUTER_USE_ORCHESTRATION", "false")
+    r = sessions_harness.client.post("/api/sessions", json=_session_json())
+    assert r.status_code == 201
+    db = sessions_harness.session_factory()
+    try:
+        row = db.get(Session, r.json()["id"])
+        assert row is not None
+        assert row.api_key is not None
+        assert row.api_key != "sk-ant-test-demo"
+        assert decrypt_session_api_key(row.api_key) == "sk-ant-test-demo"
+    finally:
+        db.close()
+
+
+def test_create_stores_plaintext_api_key_when_fernet_unset(
+    sessions_harness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SESSION_API_KEY_FERNET_KEY", raising=False)
+    monkeypatch.setenv("COMPUTER_USE_ORCHESTRATION", "false")
+    r = sessions_harness.client.post("/api/sessions", json=_session_json())
+    assert r.status_code == 201
+    db = sessions_harness.session_factory()
+    try:
+        row = db.get(Session, r.json()["id"])
+        assert row is not None
+        assert row.api_key == "sk-ant-test-demo"
+    finally:
+        db.close()
 
 
 def test_get_session_404(sessions_client: TestClient) -> None:
