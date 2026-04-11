@@ -4,7 +4,7 @@
 
 This project delivers a **production-oriented control plane** for Anthropic’s **Computer Use** capability. It **replaces the experimental single-user Streamlit interface** with a **FastAPI** application backed by **Docker-based session isolation**, so multiple operators can run independent desktop agents safely and concurrently.
 
-The API orchestrates **one isolated “Computer Use” container per session**, exposes a **single WebSocket** for chat and agent telemetry, and persists **sessions and chat history** in SQLite via SQLAlchemy—suitable for local development and containerized deployment.
+The API orchestrates **one isolated “Computer Use” container per session**, exposes a **single WebSocket** for chat and agent telemetry, and persists **sessions and chat history** via **SQLAlchemy** (default **SQLite**; **PostgreSQL** optional for scaled deployments—see [Scaling beyond a single API process](#scaling-beyond-a-single-api-process)).
 
 ---
 
@@ -36,9 +36,17 @@ The chat path uses a **persistent WebSocket** from the browser to the FastAPI pr
 
 This yields a **single bidirectional channel** for both user input and rich agent feedback—aligned with how the agent loop emits structured events rather than plain HTTP chunks alone.
 
+**WebSocket vs SSE:** Use **`/api/sessions/{id}/ws` (WebSocket)** whenever you need **bidirectional** chat, agent relay traffic, and live tool/output streaming. Use **`GET /api/sessions/{id}/events` (SSE, `text/event-stream`)** for **server→client** snapshots only—today this streams **session status** from the database on an interval (plus comment heartbeats), without duplicating chat. It suits dashboards, status indicators, or integrations that only consume progress-style updates over a simple HTTP long poll. CORS uses the same allowed origins as the rest of the API.
+
 ### Persistence: SQLAlchemy + SQLite
 
 **SQLAlchemy** models back **sessions** (status, ports, API endpoint choice, encrypted API key material when configured) and **messages**. The default database is a **SQLite** file (`computer_use_demo.db` beside the repo, or `/data/...` under Docker Compose when the volume is writable). Schema creation and lightweight migrations run on application startup.
+
+### Scaling beyond a single API process
+
+The control plane uses a **single `DATABASE_URL`** (see `.env.example`). **SQLite** is ideal for **local development** and single-process demos: it is a single file with **one writer at a time**, so running **multiple API worker processes** or **several API hosts** against the same file is a poor fit (locking, corruption risk, no shared HA story). For **production** or **horizontally scaled** FastAPI deployments, point **`DATABASE_URL` at PostgreSQL** (or another server-grade database supported by SQLAlchemy) so sessions and chat history live in a **networked, concurrent-safe** store.
+
+**Session desktops already scale horizontally on the machine:** each user session is a **separate Docker container** with its own ports and resources; adding capacity is largely a matter of **host CPU/RAM** and **Docker**, independent of where the API’s relational state lives. The database choice mainly affects **API state** (metadata, messages, WebSocket/SSE adjacency to DB polling)—not the per-session VM containers themselves.
 
 ---
 
@@ -76,7 +84,7 @@ Copy `.env.example` to `.env` in `computer-use-demo/` and set at least:
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `SESSION_API_KEY_FERNET_KEY` | **Yes** (orchestration) | Fernet key used to encrypt per-session API keys at rest. Generate once and keep stable. |
-| `DATABASE_URL` | No | SQLite URL; Compose uses `sqlite:////data/computer_use_demo.db` with a volume. On a bare host, omit or use a writable path. |
+| `DATABASE_URL` | No | Defaults to local SQLite. Use a **PostgreSQL** URL (see `.env.example`) for multi-worker / multi-host production; Compose may use `sqlite:////data/...`. |
 | `COMPUTER_USE_DOCKER_IMAGE` | No | Image for session containers (default `computer-use-demo:local`). |
 | `COMPUTER_USE_ORCHESTRATION` | No | Enable Docker session spawning (default enabled in Compose). |
 
