@@ -7,6 +7,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
 from ..anthropic_session_config import resolve_anthropic_base_url
+from ..api_key_crypto import (
+    decrypt_session_api_key,
+    encrypt_session_api_key,
+    fernet_key_configured,
+)
 from ..database import get_db
 from ..docker_manager import (
     DockerOrchestrationError,
@@ -59,12 +64,35 @@ def create_session(
 ) -> SessionRead:
     orchestrate = is_orchestration_enabled()
     base_url, endpoint_label = resolve_anthropic_base_url(body)
+    raw_key = body.api_key.get_secret_value()
+    if orchestrate and raw_key and raw_key.strip():
+        if not fernet_key_configured():
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=(
+                    "Server misconfiguration: set SESSION_API_KEY_FERNET_KEY to encrypt "
+                    'stored credentials (generate with: python -c "from cryptography.fernet '
+                    'import Fernet; print(Fernet.generate_key().decode())")'
+                ),
+            )
+    stored_key: str | None
+    if raw_key and raw_key.strip() and fernet_key_configured():
+        try:
+            stored_key = encrypt_session_api_key(raw_key)
+        except Exception as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Could not encrypt API key: {e!s}",
+            ) from e
+    else:
+        stored_key = raw_key if raw_key else None
+
     row = Session(
         status="provisioning" if orchestrate else body.status,
         vnc_port=None if orchestrate else body.vnc_port,
         agent_api_port=None if orchestrate else body.agent_api_port,
         docker_container_id=None,
-        api_key=body.api_key.get_secret_value(),
+        api_key=stored_key,
         anthropic_base_url=base_url,
         api_endpoint=endpoint_label,
     )
@@ -86,7 +114,7 @@ def create_session(
     try:
         rt = start_session_environment(
             row.id,
-            api_key=row.api_key,
+            api_key=decrypt_session_api_key(row.api_key) or "",
             anthropic_base_url=row.anthropic_base_url,
         )
     except DockerOrchestrationError as e:
