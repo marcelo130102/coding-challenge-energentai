@@ -1,5 +1,13 @@
 # Claude Quickstarts
 
+## Deliverable: scalable Computer Use backend (this fork)
+
+This fork’s **coding challenge** work lives under **[`computer-use-demo/`](./computer-use-demo)**: a **FastAPI** control plane for Anthropic **Computer Use** with **Docker**-isolated session desktops, **WebSocket** chat and agent relay, optional **SSE** session-status streaming, **SQLAlchemy** persistence (SQLite by default; **PostgreSQL** optional for scaled API deployments), Fernet-encrypted per-session API keys when orchestration is enabled, and a small bundled **HTML/JS** frontend.
+
+**Full documentation (architecture, setup, trade-offs): [computer-use-demo/README.md](./computer-use-demo/README.md)**
+
+---
+
 Claude Quickstarts is a collection of projects designed to help developers quickly get started with building  applications using the Claude API. Each quickstart provides a foundation that you can easily build upon and customize for your specific needs.
 
 ## Getting Started
