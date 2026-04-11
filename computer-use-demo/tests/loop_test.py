@@ -32,7 +32,7 @@ async def test_loop():
     api_response_callback = mock.Mock()
 
     with (
-        mock.patch("computer_use_demo.loop.Anthropic", return_value=client),
+        mock.patch("computer_use_demo.api.Anthropic", return_value=client),
         mock.patch(
             "computer_use_demo.loop.ToolCollection", return_value=tool_collection
         ),

@@ -2,22 +2,13 @@
 Agentic sampling loop that calls the Claude API and local implementation of anthropic-defined computer use tools.
 """
 
-import os
 import platform
 from collections.abc import Callable
 from datetime import datetime
-from enum import StrEnum
 from typing import Any, cast
 
 import httpx
-from anthropic import (
-    Anthropic,
-    AnthropicBedrock,
-    AnthropicVertex,
-    APIError,
-    APIResponseValidationError,
-    APIStatusError,
-)
+from anthropic import APIError, APIResponseValidationError, APIStatusError
 from anthropic.types.beta import (
     BetaCacheControlEphemeralParam,
     BetaContentBlockParam,
@@ -30,6 +21,11 @@ from anthropic.types.beta import (
     BetaToolUseBlockParam,
 )
 
+from .api import (
+    APIProvider,
+    create_beta_messages_with_raw_response,
+    messages_client_for_provider,
+)
 from .tools import (
     TOOL_GROUPS_BY_VERSION,
     ToolCollection,
@@ -38,25 +34,6 @@ from .tools import (
 )
 
 PROMPT_CACHING_BETA_FLAG = "prompt-caching-2024-07-31"
-
-
-def _build_anthropic_client(api_key: str) -> Anthropic:
-    """Prefer env vars injected by Docker orchestration, then the passed api_key."""
-    key = os.getenv("ANTHROPIC_API_KEY") or api_key
-    base = os.getenv("ANTHROPIC_BASE_URL", "").strip()
-    if base:
-        return Anthropic(
-            api_key=key,
-            max_retries=4,
-            base_url=base.rstrip("/"),
-        )
-    return Anthropic(api_key=key, max_retries=4)
-
-
-class APIProvider(StrEnum):
-    ANTHROPIC = "anthropic"
-    BEDROCK = "bedrock"
-    VERTEX = "vertex"
 
 
 # This system prompt is optimized for the Docker environment in this repository and
@@ -115,13 +92,9 @@ async def sampling_loop(
         if token_efficient_tools_beta:
             betas.append("token-efficient-tools-2025-02-19")
         image_truncation_threshold = only_n_most_recent_images or 0
+        client = messages_client_for_provider(provider, api_key)
         if provider == APIProvider.ANTHROPIC:
-            client = _build_anthropic_client(api_key)
             enable_prompt_caching = True
-        elif provider == APIProvider.VERTEX:
-            client = AnthropicVertex()
-        elif provider == APIProvider.BEDROCK:
-            client = AnthropicBedrock()
 
         if enable_prompt_caching:
             betas.append(PROMPT_CACHING_BETA_FLAG)
@@ -150,7 +123,8 @@ async def sampling_loop(
         # implementation may be able call the SDK directly with:
         # `response = client.messages.create(...)` instead.
         try:
-            raw_response = client.beta.messages.with_raw_response.create(
+            raw_response = create_beta_messages_with_raw_response(
+                client,
                 max_tokens=max_tokens,
                 messages=messages,
                 model=model,
