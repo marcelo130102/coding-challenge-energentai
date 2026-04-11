@@ -95,6 +95,14 @@ async def _probe_task(session_id: int, vnc_port: int) -> None:
             _tasks.pop(session_id, None)
 
 
+def clear_session(session_id: int) -> None:
+    """Cancel noVNC probe tasks and drop cached payloads when a session row is removed."""
+    task = _tasks.pop(session_id, None)
+    if task is not None and not task.done():
+        task.cancel()
+    _ready_payload.pop(session_id, None)
+
+
 async def on_session_websocket_connected(
     session_id: int,
     vnc_port: int | None,

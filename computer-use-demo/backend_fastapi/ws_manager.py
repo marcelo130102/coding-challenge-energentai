@@ -27,5 +27,16 @@ class SessionConnectionManager:
             except Exception:
                 self.disconnect(session_id, ws)
 
+    async def close_all_for_session(self, session_id: int) -> None:
+        """Close every browser WebSocket for this session (e.g. session deleted or relay torn down)."""
+        room = self._rooms.pop(session_id, None)
+        if not room:
+            return
+        for ws in list(room):
+            try:
+                await ws.close(code=1001, reason="Session ended")
+            except Exception:
+                pass
+
 
 session_ws_manager = SessionConnectionManager()

@@ -344,8 +344,12 @@ async def get_or_create_relay(
 
 
 async def shutdown_session_relay(session_id: int) -> None:
+    from . import vnc_readiness
+
+    vnc_readiness.clear_session(session_id)
     async with _lock_for_session(session_id):
         relay = _relays.pop(session_id, None)
     if relay is not None:
         await relay.shutdown()
     _session_locks.pop(session_id, None)
+    await _manager.close_all_for_session(session_id)

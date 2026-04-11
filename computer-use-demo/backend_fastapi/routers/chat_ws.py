@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..database import SessionLocal
@@ -14,6 +16,27 @@ from ..vnc_readiness import on_session_websocket_connected
 from ..ws_manager import session_ws_manager as _manager
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
+
+
+async def _receive_text_or_disconnect(websocket: WebSocket) -> str:
+    """Like ``receive_text``, but map stale/closed socket (Starlette RuntimeError) to disconnect."""
+    try:
+        return await websocket.receive_text()
+    except RuntimeError as e:
+        msg = str(e).lower()
+        if "not connected" in msg or "accept" in msg:
+            raise WebSocketDisconnect(code=1006) from e
+        raise
+
+
+async def _receive_json_or_disconnect(websocket: WebSocket) -> Any:
+    try:
+        return await websocket.receive_json()
+    except RuntimeError as e:
+        msg = str(e).lower()
+        if "not connected" in msg or "accept" in msg:
+            raise WebSocketDisconnect(code=1006) from e
+        raise
 
 
 @router.websocket("/{session_id}/ws")
@@ -40,7 +63,7 @@ async def session_events(websocket: WebSocket, session_id: int) -> None:
             )
             try:
                 while True:
-                    await websocket.receive_text()
+                    await _receive_text_or_disconnect(websocket)
             except WebSocketDisconnect:
                 pass
             return
@@ -64,11 +87,11 @@ async def session_events(websocket: WebSocket, session_id: int) -> None:
             )
             if relay is None:
                 while True:
-                    await websocket.receive_text()
+                    await _receive_text_or_disconnect(websocket)
             else:
                 try:
                     while True:
-                        raw = await websocket.receive_text()
+                        raw = await _receive_text_or_disconnect(websocket)
                         active = relay
                         if not active.is_running():
                             active = await get_or_create_relay(
@@ -85,13 +108,14 @@ async def session_events(websocket: WebSocket, session_id: int) -> None:
 
         while True:
             try:
-                data = await websocket.receive_json()
+                data = await _receive_json_or_disconnect(websocket)
             except WebSocketDisconnect:
                 break
-            if data.get("type") != "chat":
+            payload = cast(dict[str, Any], data) if isinstance(data, dict) else {}
+            if payload.get("type") != "chat":
                 continue
             content = normalize_user_chat_content(
-                (data.get("content") or "").strip(),
+                (payload.get("content") or "").strip(),
             )
             if not content:
                 continue
