@@ -64,11 +64,30 @@ def _migrate_sessions_columns() -> None:
             conn.execute(text(sql))
 
 
+def _migrate_messages_columns() -> None:
+    """Add columns introduced after first deploy (SQLite / simple ALTER)."""
+    insp = inspect(engine)
+    if not insp.has_table("messages"):
+        return
+    existing = {c["name"] for c in insp.get_columns("messages")}
+    if "message_kind" not in existing:
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    "ALTER TABLE messages ADD COLUMN message_kind VARCHAR(32) "
+                    "NOT NULL DEFAULT 'chat'",
+                ),
+            )
+
+
 def init_db() -> None:
     if DATABASE_URL.startswith("sqlite"):
-        logger.info("SQLite database file: %s", DATABASE_URL.replace("sqlite:///", "", 1))
+        logger.info(
+            "SQLite database file: %s", DATABASE_URL.replace("sqlite:///", "", 1)
+        )
     Base.metadata.create_all(bind=engine)
     _migrate_sessions_columns()
+    _migrate_messages_columns()
 
 
 def get_db() -> Generator[OrmSession, None, None]:

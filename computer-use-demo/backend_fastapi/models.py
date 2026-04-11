@@ -48,6 +48,13 @@ class Message(Base):
         index=True,
     )
     role: Mapped[str] = mapped_column(String(32), nullable=False)
+    #: "chat" = tarjeta con borde (usuario / respuesta demo); "progress" = actividad del agente (estilo café en UI).
+    message_kind: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="chat",
+        server_default="chat",
+    )
     content: Mapped[str] = mapped_column(Text, nullable=False)
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

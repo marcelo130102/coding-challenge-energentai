@@ -78,6 +78,10 @@ class MessageRead(BaseModel):
     session_id: int
     role: str
     content: str
+    message_kind: str = Field(
+        default="chat",
+        description='UI style: "chat" bubble vs "progress" agent activity (café).',
+    )
     timestamp: datetime
 
 
