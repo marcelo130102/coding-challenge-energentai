@@ -172,7 +172,68 @@ def start_session_environment(
     )
 
 
-def stop_session_environment(container_id: str) -> None:
+def pause_session_environment(container_id: str) -> None:
+    """Stop the session container without removing it (host ports stay reserved in-process)."""
+    client = docker.from_env()
+    try:
+        c = client.containers.get(container_id)
+        if c.status == "running":
+            c.stop(timeout=10)
+    except NotFound:
+        pass
+    except APIError as e:
+        raise DockerOrchestrationError(str(e)) from e
+
+
+def resume_session_environment(container_id: str) -> SessionRuntime:
+    """Start a paused session container and return current host port mappings."""
+    client = docker.from_env()
+    try:
+        c = client.containers.get(container_id)
+    except NotFound as e:
+        raise DockerOrchestrationError(
+            "Session container not found; remove this session and create a new one.",
+        ) from e
+    if c.status != "running":
+        try:
+            c.start()
+        except APIError as e:
+            raise DockerOrchestrationError(str(e)) from e
+    c.reload()
+    pair = _host_ports_from_attrs(c.attrs)
+    if pair is None:
+        raise DockerOrchestrationError("Could not read host port bindings for container.")
+    novnc, api = pair
+    with _lock:
+        if novnc in _used_novnc:
+            existing = next(
+                (cid for cid, p in _container_ports.items() if p[0] == novnc),
+                None,
+            )
+            if existing is not None and existing != container_id:
+                raise DockerOrchestrationError(
+                    "Host port conflict; try again or remove another session.",
+                )
+        if api in _used_api:
+            existing = next(
+                (cid for cid, p in _container_ports.items() if p[1] == api),
+                None,
+            )
+            if existing is not None and existing != container_id:
+                raise DockerOrchestrationError(
+                    "Host port conflict; try again or remove another session.",
+                )
+        _used_novnc.add(novnc)
+        _used_api.add(api)
+        _container_ports[container_id] = (novnc, api)
+    return SessionRuntime(
+        container_id=container_id,
+        novnc_host_port=novnc,
+        agent_api_host_port=api,
+    )
+
+
+def destroy_session_environment(container_id: str) -> None:
     """Stop and remove a session container and release host ports."""
     client = docker.from_env()
     novnc: int | None
