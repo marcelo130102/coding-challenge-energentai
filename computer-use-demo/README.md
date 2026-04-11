@@ -1,183 +1,148 @@
-# Anthropic Computer Use Demo
+# Scalable Backend for Anthropic Computer Use Agent Session Management
 
-> [!NOTE]
-> Now featuring support for the new Claude 4 models! The latest Claude Opus 4.5 (claude-opus-4-5-20251101) is now available, along with Claude Sonnet 4.5 (claude-sonnet-4-5-20250929), Claude Sonnet 4 (claude-sonnet-4-20250514), Claude Opus 4 (claude-opus-4-20250514), and Claude Haiku 4.5 (claude-haiku-4-5-20251001). These models bring next-generation capabilities with the updated str_replace_based_edit_tool that replaces the previous str_replace_editor tool. The undo_edit command has been removed in this latest version for a more streamlined experience.
+## Project overview
 
-> [!CAUTION]
-> Computer use is a beta feature. Please be aware that computer use poses unique risks that are distinct from standard API features or chat interfaces. These risks are heightened when using computer use to interact with the internet. To minimize risks, consider taking precautions such as:
->
-> 1. Use a dedicated virtual machine or container with minimal privileges to prevent direct system attacks or accidents.
-> 2. Avoid giving the model access to sensitive data, such as account login information, to prevent information theft.
-> 3. Limit internet access to an allowlist of domains to reduce exposure to malicious content.
-> 4. Ask a human to confirm decisions that may result in meaningful real-world consequences as well as any tasks requiring affirmative consent, such as accepting cookies, executing financial transactions, or agreeing to terms of service.
->
-> In some circumstances, Claude will follow commands found in content even if it conflicts with the user's instructions. For example, instructions on webpages or contained in images may override user instructions or cause Claude to make mistakes. We suggest taking precautions to isolate Claude from sensitive data and actions to avoid risks related to prompt injection.
->
-> Finally, please inform end users of relevant risks and obtain their consent prior to enabling computer use in your own products.
+This project delivers a **production-oriented control plane** for Anthropic’s **Computer Use** capability. It **replaces the experimental single-user Streamlit interface** with a **FastAPI** application backed by **Docker-based session isolation**, so multiple operators can run independent desktop agents safely and concurrently.
 
-This repository helps you get started with computer use on Claude, with reference implementations of:
+The API orchestrates **one isolated “Computer Use” container per session**, exposes a **single WebSocket** for chat and agent telemetry, and persists **sessions and chat history** in SQLite via SQLAlchemy—suitable for local development and containerized deployment.
 
-- Build files to create a Docker container with all necessary dependencies
-- A computer use agent loop using the Claude API, Bedrock, or Vertex to access Claude Opus 4.5, Claude Sonnet 4.5, Claude Sonnet 4, Claude Opus 4, Claude Haiku 4.5, Claude 3.7 Sonnet, and Claude 3.5 Sonnet models
-- Anthropic-defined computer use tools
-- A streamlit app for interacting with the agent loop
+---
 
-Please use [this form](https://forms.gle/BT1hpBrqDPDUrCqo7) to provide feedback on the quality of the model responses, the API itself, or the quality of the documentation - we cannot wait to hear from you!
+## Core architecture
 
-> [!IMPORTANT]
-> The Beta API used in this reference implementation is subject to change. Please refer to the [API release notes](https://docs.claude.com/en/release-notes/api) for the most up-to-date information.
+### Backend: FastAPI
 
-> [!IMPORTANT]
-> The components are weakly separated: the agent loop runs in the container being controlled by Claude, can only be used by one session at a time, and must be restarted or reset between sessions if necessary.
+The service is built on **FastAPI** for **async-first** request handling, WebSocket upgrades, and static hosting of the bundled frontend. REST endpoints under `/api` manage sessions; WebSocket routes under `/api/sessions/{id}/ws` drive real-time interaction.
 
-## Quickstart: running the Docker container
+### Session orchestration: Docker SDK
 
-### Claude API
+Session lifecycle is implemented with the **Docker SDK** (`docker` Python package). When orchestration is enabled (`COMPUTER_USE_ORCHESTRATION`), each new session:
 
-> [!TIP]
-> You can find your API key in the [Claude Console](https://console.anthropic.com/).
+| Concern | Approach |
+|--------|----------|
+| **Isolation** | A dedicated container is started from the configured Computer Use image, so each user gets a separate OS desktop, browser, and tool runtime. |
+| **Concurrency** | Independent containers avoid shared mutable state and **race conditions** that would arise from a single shared X/VNC stack serving multiple users. |
+| **Port mapping** | Host ports are **allocated dynamically** from configured ranges (noVNC and in-container agent API) and recorded on the session record for the UI. |
+| **Recovery** | On API restart, the service can **reconcile** in-use ports from running labeled containers so allocations stay consistent. |
 
-```bash
-export ANTHROPIC_API_KEY=%your_api_key%
-docker run \
-    -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-    -v $HOME/.anthropic:/home/computeruse/.anthropic \
-    -p 5900:5900 \
-    -p 8501:8501 \
-    -p 6080:6080 \
-    -p 8080:8080 \
-    -it ghcr.io/anthropics/anthropic-quickstarts:computer-use-demo-latest
-```
+API keys and optional **Anthropic-compatible base URLs** are injected into the container environment at start time (see [Environment variables](#environment-variables)).
 
-Once the container is running, see the [Accessing the demo app](#accessing-the-demo-app) section below for instructions on how to connect to the interface.
+### Real-time streaming: WebSockets
 
-### Bedrock
+The chat path uses a **persistent WebSocket** from the browser to the FastAPI process. When a session has an associated in-container **agent HTTP/WebSocket** endpoint, the backend runs an **in-process relay** that:
 
-> [!TIP]
-> To use the new Claude 3.7 Sonnet on Bedrock, you first need to [request model access](https://docs.aws.amazon.com/bedrock/latest/userguide/model-access-modify.html).
+- Forwards user messages to the container’s agent loop (Anthropic **sampling loop**).
+- Streams **assistant output, tool use, progress, and screenshot-related payloads** back to all subscribers for that session.
 
-You'll need to pass in AWS credentials with appropriate permissions to use Claude on Bedrock.
-You have a few options for authenticating with Bedrock. See the [boto3 documentation](https://boto3.amazonaws.com/v1/documentation/api/latest/guide/credentials.html#environment-variables) for more details and options.
+This yields a **single bidirectional channel** for both user input and rich agent feedback—aligned with how the agent loop emits structured events rather than plain HTTP chunks alone.
 
-#### Option 1: (suggested) Use the host's AWS credentials file and AWS profile
+### Persistence: SQLAlchemy + SQLite
 
-```bash
-export AWS_PROFILE=<your_aws_profile>
-docker run \
-    -e API_PROVIDER=bedrock \
-    -e AWS_PROFILE=$AWS_PROFILE \
-    -e AWS_REGION=us-west-2 \
-    -v $HOME/.aws:/home/computeruse/.aws \
-    -v $HOME/.anthropic:/home/computeruse/.anthropic \
-    -p 5900:5900 \
-    -p 8501:8501 \
-    -p 6080:6080 \
-    -p 8080:8080 \
-    -it ghcr.io/anthropics/anthropic-quickstarts:computer-use-demo-latest
-```
+**SQLAlchemy** models back **sessions** (status, ports, API endpoint choice, encrypted API key material when configured) and **messages**. The default database is a **SQLite** file (`computer_use_demo.db` beside the repo, or `/data/...` under Docker Compose when the volume is writable). Schema creation and lightweight migrations run on application startup.
 
-Once the container is running, see the [Accessing the demo app](#accessing-the-demo-app) section below for instructions on how to connect to the interface.
+---
 
-#### Option 2: Use an access key and secret
+## Key features
+
+- **Concurrent sessions** — Multiple sessions can be active at once; each maps to its own container and port pair.
+- **Dynamic host port allocation** — **noVNC** (desktop in browser) and **agent API** ports are chosen from configurable ranges (`NOVNC_HOST_PORT_*`, `AGENT_API_HOST_PORT_*`) to avoid collisions.
+- **Anthropic Global API and PackyAPI** — Session creation supports **global** Anthropic endpoints, **PackyAPI** (`https://www.packyapi.com`) for region-specific routing, or a **custom HTTPS base URL** where policy allows.
+- **Live interaction log and desktop view** — The UI combines streamed agent activity with an embedded **noVNC** view tied to the session’s allocated desktop port.
+
+---
+
+## Prerequisites & installation
+
+### Prerequisites
+
+- **Docker** and **Docker Compose** (Compose V2).
+- A built **Computer Use** desktop image tagged as expected by the API (default: `computer-use-demo:local`).
+- For orchestration: access to the **Docker socket** from the API container (Compose file mounts `/var/run/docker.sock`).
+
+### 1. Build the session image
+
+The API does not build the desktop VM image for you. From this directory:
 
 ```bash
-export AWS_ACCESS_KEY_ID=%your_aws_access_key%
-export AWS_SECRET_ACCESS_KEY=%your_aws_secret_access_key%
-export AWS_SESSION_TOKEN=%your_aws_session_token%
-docker run \
-    -e API_PROVIDER=bedrock \
-    -e AWS_ACCESS_KEY_ID=$AWS_ACCESS_KEY_ID \
-    -e AWS_SECRET_ACCESS_KEY=$AWS_SECRET_ACCESS_KEY \
-    -e AWS_SESSION_TOKEN=$AWS_SESSION_TOKEN \
-    -e AWS_REGION=us-west-2 \
-    -v $HOME/.anthropic:/home/computeruse/.anthropic \
-    -p 5900:5900 \
-    -p 8501:8501 \
-    -p 6080:6080 \
-    -p 8080:8080 \
-    -it ghcr.io/anthropics/anthropic-quickstarts:computer-use-demo-latest
+docker build . -t computer-use-demo:local
 ```
 
-Once the container is running, see the [Accessing the demo app](#accessing-the-demo-app) section below for instructions on how to connect to the interface.
+(`Dockerfile.api` builds only the FastAPI + frontend image used by Compose.)
 
-### Vertex
+### 2. Configure environment
 
-You'll need to pass in Google Cloud credentials with appropriate permissions to use Claude on Vertex.
+Copy `.env.example` to `.env` in `computer-use-demo/` and set at least:
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SESSION_API_KEY_FERNET_KEY` | **Yes** (orchestration) | Fernet key used to encrypt per-session API keys at rest. Generate once and keep stable. |
+| `DATABASE_URL` | No | SQLite URL; Compose uses `sqlite:////data/computer_use_demo.db` with a volume. On a bare host, omit or use a writable path. |
+| `COMPUTER_USE_DOCKER_IMAGE` | No | Image for session containers (default `computer-use-demo:local`). |
+| `COMPUTER_USE_ORCHESTRATION` | No | Enable Docker session spawning (default enabled in Compose). |
+
+Generate a Fernet key:
 
 ```bash
-docker build . -t computer-use-demo
-gcloud auth application-default login
-export VERTEX_REGION=%your_vertex_region%
-export VERTEX_PROJECT_ID=%your_vertex_project_id%
-docker run \
-    -e API_PROVIDER=vertex \
-    -e CLOUD_ML_REGION=$VERTEX_REGION \
-    -e ANTHROPIC_VERTEX_PROJECT_ID=$VERTEX_PROJECT_ID \
-    -v $HOME/.config/gcloud/application_default_credentials.json:/home/computeruse/.config/gcloud/application_default_credentials.json \
-    -p 5900:5900 \
-    -p 8501:8501 \
-    -p 6080:6080 \
-    -p 8080:8080 \
-    -it computer-use-demo
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
 
-Once the container is running, see the [Accessing the demo app](#accessing-the-demo-app) section below for instructions on how to connect to the interface.
+**Anthropic API keys** are supplied **per session through the UI** (not necessarily as a global `ANTHROPIC_API_KEY` on the API host), and are passed into the spawned container for that session.
 
-This example shows how to use the Google Cloud Application Default Credentials to authenticate with Vertex.
-You can also set `GOOGLE_APPLICATION_CREDENTIALS` to use an arbitrary credential file, see the [Google Cloud Authentication documentation](https://cloud.google.com/docs/authentication/application-default-credentials#GAC) for more details.
-
-### Accessing the demo app
-
-Once the container is running, open your browser to [http://localhost:8080](http://localhost:8080) to access the combined interface that includes both the agent chat and desktop view.
-
-The container stores settings like the API key and custom system prompt in `~/.anthropic/`. Mount this directory to persist these settings between container runs.
-
-Alternative access points:
-
-- Streamlit interface only: [http://localhost:8501](http://localhost:8501)
-- Desktop view only: [http://localhost:6080/vnc.html](http://localhost:6080/vnc.html)
-- Direct VNC connection: `vnc://localhost:5900` (for VNC clients)
-
-## Screen size
-
-Environment variables `WIDTH` and `HEIGHT` can be used to set the screen size. For example:
+### 3. Run with Docker Compose
 
 ```bash
-docker run \
-    -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-    -v $HOME/.anthropic:/home/computeruse/.anthropic \
-    -p 5900:5900 \
-    -p 8501:8501 \
-    -p 6080:6080 \
-    -p 8080:8080 \
-    -e WIDTH=1920 \
-    -e HEIGHT=1080 \
-    -it ghcr.io/anthropics/anthropic-quickstarts:computer-use-demo-latest
+docker compose up --build
 ```
 
-We do not recommend sending screenshots in resolutions above [XGA/WXGA](https://en.wikipedia.org/wiki/Display_resolution_standards#XGA) to avoid issues related to [image resizing](https://docs.claude.com/en/docs/build-with-claude/vision#evaluate-image-size).
-Relying on the image resizing behavior in the API will result in lower model accuracy and slower performance than implementing scaling in your tools directly. The `computer` tool implementation in this project demonstrates how to scale both images and coordinates from higher resolutions to the suggested resolutions.
+Open **http://127.0.0.1:8000** for the web UI.
 
-When implementing computer use yourself, we recommend using XGA resolution (1024x768):
+> **Security:** Mounting the Docker socket grants the API container powerful control over the host. Use only on **trusted machines** or hardened deployments.
 
-- For higher resolutions: Scale the image down to XGA and let the model interact with this scaled version, then map the coordinates back to the original resolution proportionally.
-- For lower resolutions or smaller devices (e.g. mobile devices): Add black padding around the display area until it reaches 1024x768.
+### Local development (optional)
 
-## Development
+For iterative backend work without Compose, see the repository root `CLAUDE.md`: Python tooling (`ruff`, `pyright`, `pytest`) and patterns for running `uvicorn` against `backend_fastapi.main:app`.
 
-```bash
-./setup.sh  # configure venv, install development dependencies, and install pre-commit hooks
-docker build . -t computer-use-demo:local  # manually build the docker image (optional)
-export ANTHROPIC_API_KEY=%your_api_key%
-docker run \
-    -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY \
-    -v $(pwd)/computer_use_demo:/home/computeruse/computer_use_demo/ `# mount local python module for development` \
-    -v $HOME/.anthropic:/home/computeruse/.anthropic \
-    -p 5900:5900 \
-    -p 8501:8501 \
-    -p 6080:6080 \
-    -p 8080:8080 \
-    -it computer-use-demo:local  # can also use ghcr.io/anthropics/anthropic-quickstarts:computer-use-demo-latest
-```
+---
 
-The docker run command above mounts the repo inside the docker image, such that you can edit files from the host. Streamlit is already configured with auto reloading.
+## Technical decisions & trade-offs
+
+### Docker isolation vs. multi-display Xvfb on one host
+
+**Chosen: one container per session.**
+
+- **Scalability** — Horizontal scaling is expressed in terms of containers and host resources, not fragile shared display numbering or a single X server bottleneck.
+- **Security & blast radius** — Compromise or bad state in one desktop does not trivially affect another user’s session filesystem or process space.
+- **Operational clarity** — Session boundaries match container boundaries; restarts and resource limits apply per customer/session.
+
+A multi-display / single-Xvfb approach can reduce per-session overhead but couples failures, complicates cleanup, and is harder to reason about under load.
+
+### WebSockets vs. SSE
+
+**Chosen: WebSockets.**
+
+- The client must send **arbitrary chat messages** and control-style payloads **at any time** while receiving **multiplexed events** (text, tool results, images). A single full-duplex connection maps naturally to that pattern.
+- **Server-Sent Events** are excellent for **server→client** streams but are awkward for **symmetric** or high-frequency client→server messaging without extra HTTP requests.
+
+SSE remains a good fit for **read-only** telemetry feeds; this product prioritized **one bidirectional channel** ready for future control messages without protocol churn.
+
+---
+
+## Reviewer instructions
+
+The following collaborators have been invited to review this repository:
+
+| GitHub user |
+|-------------|
+| lingjiekong |
+| ghamry03 |
+| goldmermaid |
+| EnergentAI |
+
+The codebase is linted (`ruff`), type-checked (`pyright`), and covered by automated tests (`pytest`) as described in `CLAUDE.md`.
+
+---
+
+## Additional references
+
+- Anthropic **Computer Use** overview and safety considerations: [Claude documentation](https://docs.claude.com/) (Computer Use is a beta capability; assess risks before production use).
+- Original upstream **Streamlit + single-container** quickstart patterns remain documented in the broader **claude-quickstarts** repository history and Anthropic-published guides for comparison.
