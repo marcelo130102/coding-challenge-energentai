@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession
 
@@ -34,6 +34,21 @@ def _session_read(row: Session) -> SessionRead:
         credentials_stored=bool(row.api_key),
         api_endpoint=row.api_endpoint,
     )
+
+
+@router.get("", response_model=list[SessionRead])
+def list_sessions(
+    db: DbDep,
+    limit: int = Query(100, ge=1, le=500, description="Max sessions to return (newest first)."),
+) -> list[SessionRead]:
+    """List recent sessions (no secrets). Newest first."""
+    stmt = (
+        select(Session)
+        .order_by(Session.created_at.desc())
+        .limit(limit)
+    )
+    rows = db.scalars(stmt).all()
+    return [_session_read(r) for r in rows]
 
 
 @router.post("", response_model=SessionRead, status_code=status.HTTP_201_CREATED)
@@ -140,15 +155,17 @@ def get_session(
     return _session_read(row)
 
 
-@router.delete("/{session_id}", response_model=SessionRead)
-def delete_session(
+@router.post("/{session_id}/stop", response_model=SessionRead)
+def stop_session(
     session_id: int,
     db: DbDep,
 ) -> SessionRead:
+    """Stop the remote desktop container and clear credentials; session row stays (status stopped)."""
     row = db.get(Session, session_id)
     if row is None:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Session not found"
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found",
         )
     cid = row.docker_container_id
     if cid:
@@ -170,3 +187,30 @@ def delete_session(
     db.commit()
     db.refresh(row)
     return _session_read(row)
+
+
+@router.delete("/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_session(
+    session_id: int,
+    db: DbDep,
+) -> Response:
+    """Permanently remove the session and its messages. Stops and removes the Docker container if still present."""
+    row = db.get(Session, session_id)
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Session not found",
+        )
+    cid = row.docker_container_id
+    if cid:
+        try:
+            stop_session_environment(cid)
+        except DockerOrchestrationError as e:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=str(e),
+            ) from e
+
+    db.delete(row)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

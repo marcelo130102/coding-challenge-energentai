@@ -1,16 +1,28 @@
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Generator
+from pathlib import Path
 
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session as OrmSession, sessionmaker
 
 from .models import Base
 
-DEFAULT_SQLITE_URL = "sqlite:///./computer_use_demo.db"
+logger = logging.getLogger(__name__)
 
-DATABASE_URL = os.getenv("DATABASE_URL", DEFAULT_SQLITE_URL)
+# Resolve SQLite path from this package so it does not depend on uvicorn cwd.
+_BACKEND_DIR = Path(__file__).resolve().parent
+_REPO_ROOT = _BACKEND_DIR.parent
+_DEFAULT_SQLITE_PATH = _REPO_ROOT / "computer_use_demo.db"
+
+
+def _default_sqlite_url() -> str:
+    return f"sqlite:///{_DEFAULT_SQLITE_PATH.resolve().as_posix()}"
+
+
+DATABASE_URL = os.getenv("DATABASE_URL") or _default_sqlite_url()
 
 
 def _create_engine():
@@ -53,6 +65,8 @@ def _migrate_sessions_columns() -> None:
 
 
 def init_db() -> None:
+    if DATABASE_URL.startswith("sqlite"):
+        logger.info("SQLite database file: %s", DATABASE_URL.replace("sqlite:///", "", 1))
     Base.metadata.create_all(bind=engine)
     _migrate_sessions_columns()
 

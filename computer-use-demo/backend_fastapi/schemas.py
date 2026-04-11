@@ -27,7 +27,10 @@ class SessionCreate(BaseModel):
     )
     agent_api_port: int | None = Field(
         default=None,
-        description="Host port for Streamlit when orchestration is disabled.",
+        description=(
+            "Host port mapped to the in-container agent UI (8501): FastAPI WebSocket agent "
+            "or legacy Streamlit when orchestration is disabled."
+        ),
     )
 
     @field_validator("base_url", mode="before")
