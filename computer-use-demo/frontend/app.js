@@ -524,7 +524,6 @@
       appendProgress(line);
       return;
     }
-    appendProgress("Session resumed.");
     if (sessionId === id) {
       await openSession(id);
     } else {

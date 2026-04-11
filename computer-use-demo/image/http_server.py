@@ -11,7 +11,6 @@ def run_server():
     os.chdir(os.path.dirname(__file__) + "/static_content")
     server_address = ("::", 8080)
     httpd = HTTPServerV6(server_address, SimpleHTTPRequestHandler)
-    print("Starting HTTP server on port 8080...")  # noqa: T201
     httpd.serve_forever()
 
 

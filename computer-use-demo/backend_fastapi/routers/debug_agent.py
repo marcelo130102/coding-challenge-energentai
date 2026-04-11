@@ -1,5 +1,3 @@
-"""Optional HTTP diagnostics (enable with COMPUTER_USE_DEBUG_AGENT_PROBE=1)."""
-
 from __future__ import annotations
 
 import os
@@ -13,11 +11,7 @@ router = APIRouter(tags=["debug"])
 
 @router.get("/debug/agent-probe/{port}")
 def agent_openapi_probe_report(port: int) -> dict:
-    """
-    Returns the same structured probe as logged on the server (headers, body preview, curl hint).
-
-    Enable with: COMPUTER_USE_DEBUG_AGENT_PROBE=1
-    """
+    """Requires COMPUTER_USE_DEBUG_AGENT_PROBE=1."""
     if os.getenv("COMPUTER_USE_DEBUG_AGENT_PROBE", "").lower() not in (
         "1",
         "true",

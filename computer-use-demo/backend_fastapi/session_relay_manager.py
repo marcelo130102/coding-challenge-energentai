@@ -1,8 +1,4 @@
-"""Persistent WebSocket relay to the in-container agent (decoupled from browser WS).
-
-Browser disconnects no longer close the upstream connection; the relay runs until
-explicit shutdown (session stop/delete) or connection failure.
-"""
+"""In-process relay from the API to the container agent WebSocket."""
 
 from __future__ import annotations
 
@@ -26,13 +22,11 @@ from .ws_manager import session_ws_manager as _manager
 
 logger = logging.getLogger(__name__)
 
-# session_id -> relay (only while agent is active)
 _relays: dict[int, SessionAgentRelay] = {}
 _session_locks: dict[int, asyncio.Lock] = {}
 
 
 def normalize_user_chat_content(raw: str) -> str:
-    """Store plain user text; unwrap legacy JSON if pasted."""
     s = raw.strip()
     if not s.startswith("{"):
         return s
@@ -74,7 +68,6 @@ class SessionAgentRelay:
         return self._task is not None and not self._task.done()
 
     async def ensure_started(self) -> bool:
-        """Probe HTTP, connect upstream, start sender/receiver tasks. Idempotent."""
         if websockets is None:
             await _manager.broadcast(
                 self.session_id,
@@ -157,11 +150,7 @@ class SessionAgentRelay:
             return True
 
     def _sync_persist_combined_unlocked(self, combined: str) -> None:
-        """Persist current assistant turn text; INSERT first time, then UPDATE same row.
-
-        Call only with ``assistant_lock`` held so the receiver and user-send paths
-        cannot race with segment resets.
-        """
+        """Upsert assistant turn text; requires ``assistant_lock``."""
         if not combined:
             return
         mid = self._streaming_assistant_message_id
@@ -210,7 +199,6 @@ class SessionAgentRelay:
                 self._sync_persist_combined_unlocked(combined)
 
     async def handle_client_raw(self, raw: str) -> None:
-        """Parse chat, persist user turn, enqueue raw for upstream (serialized per session)."""
         async with self._client_send_lock:
             db = SessionLocal()
             try:
@@ -331,7 +319,6 @@ class SessionAgentRelay:
 async def get_or_create_relay(
     session_id: int, agent_port: int
 ) -> SessionAgentRelay | None:
-    """Return the running relay for this session, starting it if needed."""
     async with _lock_for_session(session_id):
         existing = _relays.get(session_id)
         if existing is not None:
@@ -357,7 +344,6 @@ async def get_or_create_relay(
 
 
 async def shutdown_session_relay(session_id: int) -> None:
-    """Stop background relay and close upstream (call on session stop/delete)."""
     async with _lock_for_session(session_id):
         relay = _relays.pop(session_id, None)
     if relay is not None:

@@ -149,11 +149,6 @@ def diagnose_agent_openapi_port(port: int) -> tuple[bool, str, dict[str, Any]]:
         if isinstance(data, dict) and (
             "openapi" in data or "swagger" in data or "paths" in data
         ):
-            logger.info(
-                "agent OpenAPI probe OK port=%s top_level_keys=%s",
-                port,
-                details.get("parsed_top_level_keys"),
-            )
             return True, "", details
 
         msg = "The remote assistant didn’t respond as expected. Please try again."
@@ -177,7 +172,6 @@ def _log_probe_diagnosis(
     details: dict[str, Any],
     message: str,
 ) -> None:
-    """Emit one structured block to the API process logs (uvicorn terminal)."""
     payload = {"ok": False, "port": port, "message": message, **details}
     logger.warning("agent OpenAPI probe FAILED\n%s", json.dumps(payload, indent=2, default=str))
 
@@ -211,9 +205,8 @@ async def connect_agent_websocket(
     *,
     websockets_module: Any,
 ) -> Any:
-    """WebSocket handshake with retries while the agent accepts connections."""
     last_exc: BaseException | None = None
-    for attempt in range(AGENT_WS_RETRIES):
+    for _attempt in range(AGENT_WS_RETRIES):
         try:
             return await websockets_module.connect(
                 uri,
@@ -222,12 +215,6 @@ async def connect_agent_websocket(
             )
         except Exception as e:
             last_exc = e
-            logger.debug(
-                "agent ws connect attempt %s/%s: %s",
-                attempt + 1,
-                AGENT_WS_RETRIES,
-                e,
-            )
             await asyncio.sleep(AGENT_WS_RETRY_DELAY_S)
     assert last_exc is not None
     raise last_exc

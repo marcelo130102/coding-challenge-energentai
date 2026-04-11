@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 from collections.abc import Generator
 from pathlib import Path
@@ -9,8 +8,6 @@ from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session as OrmSession, sessionmaker
 
 from .models import Base
-
-logger = logging.getLogger(__name__)
 
 # Resolve SQLite path from this package so it does not depend on uvicorn cwd.
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -81,10 +78,6 @@ def _migrate_messages_columns() -> None:
 
 
 def init_db() -> None:
-    if DATABASE_URL.startswith("sqlite"):
-        logger.info(
-            "SQLite database file: %s", DATABASE_URL.replace("sqlite:///", "", 1)
-        )
     Base.metadata.create_all(bind=engine)
     _migrate_sessions_columns()
     _migrate_messages_columns()

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import logging
-
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from ..database import SessionLocal
@@ -14,8 +12,6 @@ from ..session_relay_manager import (
 )
 from ..vnc_readiness import on_session_websocket_connected
 from ..ws_manager import session_ws_manager as _manager
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -135,7 +131,7 @@ async def session_events(websocket: WebSocket, session_id: int) -> None:
                 },
             )
     except WebSocketDisconnect:
-        logger.debug("WebSocket disconnected session_id=%s", session_id)
+        pass
     finally:
         _manager.disconnect(session_id, websocket)
         db.close()
