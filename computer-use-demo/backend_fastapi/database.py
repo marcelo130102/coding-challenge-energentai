@@ -50,7 +50,10 @@ def _ensure_sqlite_file_exists(url_str: str) -> None:
 
 
 def _resolved_database_url() -> str:
-    """Pick DATABASE_URL, ensure SQLite parent dirs exist, fall back if /data is unusable (local dev)."""
+    """Pick DATABASE_URL, ensure SQLite parent dirs exist, fall back if /data is unusable (local dev).
+
+    Non-SQLite URLs (e.g. ``postgresql+psycopg2://...``) are returned unchanged for production.
+    """
     raw = (os.getenv("DATABASE_URL") or "").strip()
     if not raw:
         return _default_sqlite_url()

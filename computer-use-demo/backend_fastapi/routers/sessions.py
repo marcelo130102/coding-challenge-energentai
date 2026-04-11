@@ -52,7 +52,11 @@ def list_sessions(
     ),
 ) -> list[SessionRead]:
     """List recent sessions (no secrets). Newest first."""
-    stmt = select(Session).order_by(Session.created_at.desc()).limit(limit)
+    stmt = (
+        select(Session)
+        .order_by(Session.created_at.desc(), Session.id.desc())
+        .limit(limit)
+    )
     rows = db.scalars(stmt).all()
     return [_session_read(r) for r in rows]
 
