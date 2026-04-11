@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Generator
 from pathlib import Path
 
 from sqlalchemy import create_engine, inspect, text
+from sqlalchemy.engine.url import make_url
 from sqlalchemy.orm import Session as OrmSession, sessionmaker
 
 from .models import Base
+
+logger = logging.getLogger(__name__)
 
 # Resolve SQLite path from this package so it does not depend on uvicorn cwd.
 _BACKEND_DIR = Path(__file__).resolve().parent
@@ -19,7 +23,44 @@ def _default_sqlite_url() -> str:
     return f"sqlite:///{_DEFAULT_SQLITE_PATH.resolve().as_posix()}"
 
 
-DATABASE_URL = os.getenv("DATABASE_URL") or _default_sqlite_url()
+def _resolved_database_url() -> str:
+    """Pick DATABASE_URL, ensure SQLite parent dirs exist, fall back if /data is unusable (local dev)."""
+    raw = (os.getenv("DATABASE_URL") or "").strip()
+    if not raw:
+        return _default_sqlite_url()
+    if not raw.startswith("sqlite"):
+        return raw
+
+    try:
+        url = make_url(raw)
+    except Exception:
+        return raw
+
+    if not url.database or url.database == ":memory:":
+        return raw
+
+    path = Path(url.database)
+    if not path.is_absolute():
+        path = (_REPO_ROOT / path).resolve()
+
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        # Typical when .env copies Docker's sqlite:////data/... on a Mac host.
+        if path.is_absolute() and str(path).startswith("/data"):
+            logger.warning(
+                "DATABASE_URL directory not usable (%s: %s). Using default %s.",
+                path.parent,
+                exc,
+                _DEFAULT_SQLITE_PATH,
+            )
+            return _default_sqlite_url()
+        raise
+
+    return raw
+
+
+DATABASE_URL = _resolved_database_url()
 
 
 def _create_engine():
