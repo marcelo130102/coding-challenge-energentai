@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from .database import init_db
 from .docker_manager import sync_port_registry_from_docker
 from .routers.chat_ws import router as chat_ws_router
+from .routers.debug_agent import router as debug_agent_router
 from .routers.sessions import router as sessions_router
 
 _DEFAULT_CORS_ORIGINS = (
@@ -49,6 +50,7 @@ app.add_middleware(
 
 app.include_router(sessions_router, prefix="/api")
 app.include_router(chat_ws_router, prefix="/api")
+app.include_router(debug_agent_router, prefix="/api")
 
 _frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 if _frontend_dir.is_dir():
