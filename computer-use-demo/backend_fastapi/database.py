@@ -23,6 +23,32 @@ def _default_sqlite_url() -> str:
     return f"sqlite:///{_DEFAULT_SQLITE_PATH.resolve().as_posix()}"
 
 
+def _sqlite_db_path_from_url(url_str: str) -> Path | None:
+    """Absolute filesystem path for a file-based SQLite URL, or None if not applicable."""
+    if not url_str.startswith("sqlite"):
+        return None
+    try:
+        url = make_url(url_str)
+    except Exception:
+        return None
+    if not url.database or url.database == ":memory:":
+        return None
+    path = Path(url.database)
+    if not path.is_absolute():
+        path = (_REPO_ROOT / path).resolve()
+    return path
+
+
+def _ensure_sqlite_file_exists(url_str: str) -> None:
+    """Create parent directory and empty DB file if missing (e.g. after /data fallback)."""
+    path = _sqlite_db_path_from_url(url_str)
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():
+        path.touch()
+
+
 def _resolved_database_url() -> str:
     """Pick DATABASE_URL, ensure SQLite parent dirs exist, fall back if /data is unusable (local dev)."""
     raw = (os.getenv("DATABASE_URL") or "").strip()
@@ -61,6 +87,7 @@ def _resolved_database_url() -> str:
 
 
 DATABASE_URL = _resolved_database_url()
+_ensure_sqlite_file_exists(DATABASE_URL)
 
 
 def _create_engine():
