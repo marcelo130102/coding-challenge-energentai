@@ -163,6 +163,7 @@
         padding: 0.2rem 0.2rem 0.2rem 0;
       }
       .session-item-stop,
+      .session-item-resume,
       .session-item-remove {
         font-size: 0.65rem;
         padding: 0.3rem 0.4rem;
@@ -175,6 +176,15 @@
       .session-item-stop:hover {
         background: #fef3c7;
         border-color: #fcd34d;
+      }
+      .session-item-resume {
+        color: #166534;
+        border-color: #bbf7d0;
+        background: #f0fdf4;
+      }
+      .session-item-resume:hover {
+        background: #dcfce7;
+        border-color: #86efac;
       }
       .session-item-remove {
         color: #b91c1c;
@@ -447,8 +457,9 @@
             <button type="button" class="btn-ghost" id="btn-new-chat">New chat</button>
           </div>
           <p class="sidebar-hint">
-            Open a conversation from the list. <strong>Stop</strong> shuts down the desktop but
-            keeps history; <strong>Remove</strong> deletes it for good.
+            Open a conversation from the list. <strong>Stop</strong> pauses the Docker desktop
+            (chat history and API key stay; use <strong>Resume</strong> to turn it on again).
+            <strong>Remove</strong> deletes the session and removes the container.
           </p>
           <ul id="session-list" class="session-list"></ul>
         </aside>

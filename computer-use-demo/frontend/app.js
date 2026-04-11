@@ -114,6 +114,20 @@
     el.chatLog.scrollTop = el.chatLog.scrollHeight;
   }
 
+  /**
+   * Renders a persisted or live message using the same rules as the stream:
+   * `progress` assistant rows use the café activity style (matches WebSocket progress).
+   * @param {{ role: string, content: string, message_kind?: string }} m
+   */
+  function appendMessageFromRecord(m) {
+    const kind = m.message_kind != null ? String(m.message_kind) : "chat";
+    if (kind === "progress" && m.role === "assistant") {
+      appendProgress(m.content != null ? String(m.content) : "");
+      return;
+    }
+    appendMessage(m.role || "unknown", m.content != null ? String(m.content) : "");
+  }
+
   /** Accepts plain text; if pasted legacy JSON chat payload, uses the inner text only. */
   function normalizeOutgoingChat(raw) {
     const text = raw.trim();
@@ -197,8 +211,7 @@
         return;
       }
       if (data.type === "message" && data.message) {
-        const m = data.message;
-        appendMessage(m.role || "unknown", m.content || "");
+        appendMessageFromRecord(data.message);
         return;
       }
     });
@@ -223,7 +236,7 @@
     const messages = await r.json();
     el.chatLog.innerHTML = "";
     for (const m of messages) {
-      appendMessage(m.role, m.content);
+      appendMessageFromRecord(m);
     }
   }
 
@@ -371,13 +384,23 @@
       const actions = document.createElement("div");
       actions.className = "session-item-actions";
 
-      const showStop = s.status !== "stopped";
-      if (showStop) {
+      if (s.status === "stopped") {
+        const resumeBtn = document.createElement("button");
+        resumeBtn.type = "button";
+        resumeBtn.className = "session-item-resume";
+        resumeBtn.textContent = "Resume";
+        resumeBtn.title = "Start the same Docker desktop again (history preserved)";
+        resumeBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          void resumeSession(s.id);
+        });
+        actions.appendChild(resumeBtn);
+      } else {
         const stopBtn = document.createElement("button");
         stopBtn.type = "button";
         stopBtn.className = "session-item-stop";
         stopBtn.textContent = "Stop";
-        stopBtn.title = "Stop the remote desktop (session stays in the list)";
+        stopBtn.title = "Pause the remote desktop (you can resume later)";
         stopBtn.addEventListener("click", (ev) => {
           ev.stopPropagation();
           void stopSession(s.id);
@@ -423,6 +446,9 @@
 
   async function openSession(id) {
     const numId = Number(id);
+    if (numId === sessionId && socket && socket.readyState === WebSocket.OPEN) {
+      return;
+    }
     el.chatInput.disabled = true;
     el.btnSend.disabled = true;
     closeSocket();
@@ -440,6 +466,15 @@
       el.sessionLabel.textContent = formatSessionLabel(data);
       el.chatLog.innerHTML = "";
       await loadHistory();
+      if (data.status === "stopped") {
+        el.chatInput.disabled = true;
+        el.btnSend.disabled = true;
+        showVncPlaceholder(
+          "Session stopped — click Resume in the sidebar to start the desktop and chat again.",
+        );
+        await renderSessionList();
+        return;
+      }
       await prepareVncEmbed();
       connectWebSocket();
     } catch {
@@ -451,7 +486,7 @@
 
   async function stopSession(id) {
     const ok = window.confirm(
-      "Stop the remote desktop for this session? It will stay in the list until you remove it.",
+      "Pause the remote desktop? The session and chat stay; you can Resume later.",
     );
     if (!ok) return;
     const r = await fetch(`${API_BASE}/api/sessions/${id}/stop`, {
@@ -466,10 +501,35 @@
       el.chatInput.disabled = true;
       el.btnSend.disabled = true;
       showVncPlaceholder(
-        "Session stopped. Open another session or remove this one from the list.",
+        "Session stopped — click Resume in the sidebar to start the desktop again.",
       );
     }
     await renderSessionList();
+  }
+
+  async function resumeSession(id) {
+    const r = await fetch(`${API_BASE}/api/sessions/${id}/resume`, {
+      method: "POST",
+    });
+    if (!r.ok) {
+      let line = "Could not resume the session.";
+      try {
+        const err = await r.json();
+        if (typeof err.detail === "string") {
+          line = err.detail;
+        }
+      } catch {
+        /* keep default */
+      }
+      appendProgress(line);
+      return;
+    }
+    appendProgress("Session resumed.");
+    if (sessionId === id) {
+      await openSession(id);
+    } else {
+      await renderSessionList();
+    }
   }
 
   async function removeSession(id) {
