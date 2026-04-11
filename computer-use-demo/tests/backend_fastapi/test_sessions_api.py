@@ -134,6 +134,20 @@ def test_create_custom_base_url(sessions_client: TestClient) -> None:
     assert "api_key" not in data
 
 
+def test_create_orchestration_requires_fernet_key(
+    sessions_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("COMPUTER_USE_ORCHESTRATION", "true")
+    monkeypatch.delenv("SESSION_API_KEY_FERNET_KEY", raising=False)
+    r = sessions_client.post(
+        "/api/sessions",
+        json=_session_json(status="running"),
+    )
+    assert r.status_code == 503
+    assert "SESSION_API_KEY_FERNET_KEY" in r.json()["detail"]
+
+
 @patch("backend_fastapi.routers.sessions.start_session_environment")
 def test_create_with_orchestration_success(
     mock_start: object,

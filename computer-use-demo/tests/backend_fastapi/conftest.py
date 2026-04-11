@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import base64
+import hashlib
+
 import pytest
+from cryptography.fernet import Fernet
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -20,6 +24,18 @@ def _default_no_docker_orchestration(monkeypatch: pytest.MonkeyPatch) -> None:
 @pytest.fixture
 def with_docker_orchestration(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("COMPUTER_USE_ORCHESTRATION", "true")
+    # Fernet key for tests (orchestrated sessions require encrypted-at-rest credentials).
+    monkeypatch.setenv(
+        "SESSION_API_KEY_FERNET_KEY", Fernet.generate_key().decode("ascii")
+    )
+
+
+@pytest.fixture
+def test_fernet_key(monkeypatch: pytest.MonkeyPatch) -> str:
+    """Deterministic key for crypto unit tests."""
+    key = base64.urlsafe_b64encode(hashlib.sha256(b"test-secret").digest())
+    monkeypatch.setenv("SESSION_API_KEY_FERNET_KEY", key.decode("ascii"))
+    return key.decode("ascii")
 
 
 @pytest.fixture
