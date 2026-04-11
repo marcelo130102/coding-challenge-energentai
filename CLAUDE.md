@@ -9,8 +9,10 @@
 ### Setup & Development
 
 - **Setup environment**: `./setup.sh`
-- **Build Docker**: `docker build . -t computer-use-demo:local`
-- **Run container**: `docker run -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY -v $(pwd)/computer_use_demo:/home/computeruse/computer_use_demo/ -v $HOME/.anthropic:/home/computeruse/.anthropic -p 5900:5900 -p 8501:8501 -p 6080:6080 -p 8080:8080 -it computer-use-demo:local`
+- **Build Docker (desktop VM image)**: `docker build . -t computer-use-demo:local` (from `computer-use-demo/`)
+- **Run FastAPI + browser UI (orchestrator)**: `uvicorn backend_fastapi.main:app --reload --host 127.0.0.1 --port 8000` from `computer-use-demo/` — API keys are entered in the UI per session (not via host env).
+- **Docker Compose (same orchestrator in a container)**: set `SESSION_API_KEY_FERNET_KEY` in `.env` (see `.env.example`), then `docker compose up --build` from `computer-use-demo/` after building the VM image (see `docker-compose.yml`; Docker socket required to spawn session containers).
+- **Run the desktop VM image alone (no FastAPI orchestrator)**: `docker run -e ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY -v $(pwd)/computer_use_demo:/home/computeruse/computer_use_demo/ -v $HOME/.anthropic:/home/computeruse/.anthropic -p 5900:5900 -p 8501:8501 -p 6080:6080 -p 8080:8080 -it computer-use-demo:local` — here you **do** pass `ANTHROPIC_API_KEY` into the container so the in-VM agent (`agent_service`) can read it from the environment; there is no web form in this mode.
 
 ### Testing & Code Quality
 
