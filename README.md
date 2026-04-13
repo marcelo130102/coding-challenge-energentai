@@ -4,18 +4,14 @@ Author: Marcelo Surco
 
 ## Homework submission (this repository)
 
-Treat this **private** repository as the **single deliverable** for reviewers: architecture, how to run the service, and what the demo video must show. Evaluators should be able to grade from **README + code** (not everyone has access to the same email thread).
+Treat this **private** repository as the **single deliverable** for reviewers: architecture, how to run the service, and what the demo video must show.
 
 | Requirement | Where it is addressed |
 |-------------|----------------------|
 | **Working implementation** | [`computer-use-demo/`](./computer-use-demo): **FastAPI** control plane, **one Docker container per session** (dynamically spawned per new session—no hard-coded “only 2 concurrent” architecture), **WebSocket** realtime relay, **SQLAlchemy** persistence (SQLite by default; optional PostgreSQL for scaled API). |
 | **Detailed README** | This file (submission summary + video) and [`computer-use-demo/README.md`](./computer-use-demo/README.md) (technical deep dive). |
-| **GitHub collaborators** | Invite: **`lingjiekong`**, **`ghamry03`**, **`goldmermaid`**, **`EnergentAI`** (read access is typically sufficient). |
-| **Completion email** | When ready, reply with the **private repo URL only** as the homework completion notice; technical detail stays here. |
 
 ### Demo video (~5 minutes, with audio)
-
-Host the video where reviewers can open it (e.g. unlisted YouTube, Loom, or Drive) and **paste the URL below**:
 
 **Demo video URL:** `[https://youtu.be/XTKSxNVkems]`
 
