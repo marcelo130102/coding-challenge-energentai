@@ -1,4 +1,18 @@
+Author: Marcelo Surco
+
 # Scalable Backend for Anthropic Computer Use Agent Session Management
+
+## Homework alignment (rubric mapping)
+
+How this codebase maps to the assignment (full demo script and video URL live in the **[root README](../README.md)**):
+
+| Rubric item | In this implementation |
+|-------------|-------------------------|
+| **Proposed / working architecture** | FastAPI orchestrates **sessions**; with orchestration enabled, **each new session** starts a **dedicated Docker container** (desktop + agent)—not a single global queue or a hard-coded fixed number of demo “slots.” |
+| **True concurrency (not sequential)** | Two sessions ⇒ **two containers** ⇒ two graphics stacks and two agent runtimes; desktop work does not serialize across users by design. |
+| **No cross-session race on shared desktop state** | Isolation at the container boundary; DB rows keyed by `session_id`; host ports allocated **dynamically** from configured ranges. |
+| **Realtime / Streamlit-like UX** | **WebSocket** path (`/api/sessions/{id}/ws`) relays agent-loop events (text, tool use, screenshots); the UI shows a live log and accepts a new message after a task completes. |
+| **Video proof** | Dubai case; Tokyo + New York in parallel in two windows; ~5 minutes with audio—see root README. |
 
 ## Project overview
 
@@ -137,7 +151,7 @@ SSE remains a good fit for **read-only** telemetry feeds; this product prioritiz
 
 ## Reviewer instructions
 
-The following collaborators have been invited to review this repository:
+Invite these GitHub users as **collaborators** on the **private** repository (read access is usually enough for review):
 
 | GitHub user |
 |-------------|
@@ -145,6 +159,8 @@ The following collaborators have been invited to review this repository:
 | ghamry03 |
 | goldmermaid |
 | EnergentAI |
+
+**Single README policy:** The **root README** is the canonical place for the **~5 min demo video URL** and scene checklist; this file covers architecture and local runbook.
 
 The codebase is linted (`ruff`), type-checked (`pyright`), and covered by automated tests (`pytest`) as described in `CLAUDE.md`.
 

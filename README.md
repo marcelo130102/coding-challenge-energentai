@@ -1,4 +1,34 @@
+Author: Marcelo Surco
+
 # Claude Quickstarts
+
+## Homework submission (this repository)
+
+Treat this **private** repository as the **single deliverable** for reviewers: architecture, how to run the service, and what the demo video must show. Evaluators should be able to grade from **README + code** (not everyone has access to the same email thread).
+
+| Requirement | Where it is addressed |
+|-------------|----------------------|
+| **Working implementation** | [`computer-use-demo/`](./computer-use-demo): **FastAPI** control plane, **one Docker container per session** (dynamically spawned per new session—no hard-coded “only 2 concurrent” architecture), **WebSocket** realtime relay, **SQLAlchemy** persistence (SQLite by default; optional PostgreSQL for scaled API). |
+| **Detailed README** | This file (submission summary + video) and [`computer-use-demo/README.md`](./computer-use-demo/README.md) (technical deep dive). |
+| **GitHub collaborators** | Invite: **`lingjiekong`**, **`ghamry03`**, **`goldmermaid`**, **`EnergentAI`** (read access is typically sufficient). |
+| **Completion email** | When ready, reply with the **private repo URL only** as the homework completion notice; technical detail stays here. |
+
+### Demo video (~5 minutes, with audio)
+
+Host the video where reviewers can open it (e.g. unlisted YouTube, Loom, or Drive) and **paste the URL below**:
+
+**Demo video URL:** `[https://youtu.be/XTKSxNVkems]`
+
+Minimum script the video must cover:
+
+1. **Repository and codebase overview** — Key folders, FastAPI backend location, embedded frontend.
+2. **Service launch and endpoints** — How you start the stack (e.g. `docker compose up --build` from `computer-use-demo/`), UI URL (e.g. `http://127.0.0.1:8000`), and relevant API/WebSocket routes.
+3. **Usage demonstrations**
+   - **Usage case 1:** Start a new chat session → prompt **“Search the weather in Dubai”** → show Firefox opening, Google search, and a **realtime** streamed summary.
+   - **Usage case 2 (concurrent sessions, strictly non-blocking):** While one task runs (e.g. **“Search the weather in Tokyo”**), submit **in parallel** from another session **“Search the weather in New York”**. Both must **make progress at the same time**; the second must **not** wait for the first (sequential queuing fails the requirement). **Visual verification:** two windows side-by-side (e.g. two browser tabs as User A / User B), **two separate** Firefox automation desktops, Tokyo and New York searches **simultaneously**, summaries in **realtime**. Architecture must **spawn a worker (container) per session** for new requests—not a fixed pool “for demo only.”
+4. **Streamlit-like UI behavior** — Show **streaming** progress for intermediate steps while the task runs; after completion, show the UI **prompting for a new task**.
+
+---
 
 ## Deliverable: scalable Computer Use backend (this fork)
 
