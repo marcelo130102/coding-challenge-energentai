@@ -13,7 +13,7 @@ Treat this **private** repository as the **single deliverable** for reviewers: a
 
 ### Demo video (~5 minutes, with audio)
 
-**Demo video URL:** `[https://www.youtube.com/watch?v=hUWH4j2vaI4](https://www.youtube.com/watch?v=hUWH4j2vaI4)`
+**Demo video URL:** [https://www.youtube.com/watch?v=hUWH4j2vaI4](https://www.youtube.com/watch?v=hUWH4j2vaI4)
 
 Minimum script the video must cover:
 
